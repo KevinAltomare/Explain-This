@@ -4,23 +4,44 @@ import '../models/history_item.dart';
 import '../widgets/formatted_text.dart';
 import 'package:share_plus/share_plus.dart';
 
+
+String _extractTitle(String explanation) {
+  var cleaned = explanation
+      .replaceFirst("What you need to know:", "")
+      .replaceFirst("What you need to do:", "")
+      .trim();
+
+  final end = cleaned.indexOf('.');
+  if (end != -1) {
+    return cleaned.substring(0, end + 1).trim();
+  }
+
+  return cleaned.length > 60 ? '${cleaned.substring(0, 60)}…' : cleaned;
+}
+
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final box = Hive.box('history');
 
     return Scaffold(
-      appBar: AppBar(title: const Text("History")),
+      appBar: AppBar(
+        title: const Text("History"),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+      ),
       body: ValueListenableBuilder(
         valueListenable: box.listenable(),
+        // ignore: unnecessary_underscores
         builder: (context, _, __) {
           if (box.isEmpty) {
-            return _buildEmptyState();
+            return _buildEmptyState(theme);
           }
 
-          // ⭐ Convert Hive box to a list and sort newest → oldest
           final items = List.generate(box.length, (index) {
             final map = Map<String, dynamic>.from(box.getAt(index));
             return HistoryItem.fromMap(map);
@@ -31,6 +52,7 @@ class HistoryScreen extends StatelessWidget {
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
+              final title = _extractTitle(item.explanation);
 
               return Dismissible(
                 key: ValueKey(item.timestamp.toIso8601String()),
@@ -38,21 +60,24 @@ class HistoryScreen extends StatelessWidget {
                 background: Container(
                   margin: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.red,
+                    color: theme.colorScheme.error,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: const Icon(Icons.delete, color: Colors.white),
+                  child: Icon(
+                    Icons.delete,
+                    color: theme.colorScheme.onError,
+                  ),
                 ),
                 onDismissed: (_) {
                   final originalIndex = box.length - 1 - index;
                   box.deleteAt(originalIndex);
                 },
 
-                // ⭐ Card layout with icon
                 child: Card(
-                  elevation: 2,
+                  elevation: 1,
+                  color: theme.colorScheme.surfaceContainerLow,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -72,36 +97,32 @@ class HistoryScreen extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ⭐ Small icon
-                          const Padding(
-                            padding: EdgeInsets.only(right: 12),
-                            child: Icon(Icons.description_outlined, size: 28),
+                          Icon(
+                            Icons.description_outlined,
+                            size: 28,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
+                          const SizedBox(width: 12),
 
-                          // ⭐ Text content
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Title
                                 Text(
-                                  item.explanation.split('\n').first,
+                                  title,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 16,
+                                  style: theme.textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-
                                 const SizedBox(height: 8),
 
-                                // Timestamp
                                 Text(
                                   _formatTimestamp(item.timestamp),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
                                   ),
                                 ),
                               ],
@@ -120,25 +141,32 @@ class HistoryScreen extends StatelessWidget {
     );
   }
 
-  // ⭐ Friendly empty state
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(ThemeData theme) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.history, size: 80, color: Colors.grey),
-            SizedBox(height: 20),
+          children: [
+            Icon(
+              Icons.history,
+              size: 80,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 20),
             Text(
               "No history yet",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
               "Your past explanations will appear here.",
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
             ),
           ],
         ),
@@ -147,7 +175,8 @@ class HistoryScreen extends StatelessWidget {
   }
 
   String _formatTimestamp(DateTime time) {
-    return "${time.month}/${time.day}/${time.year}  ${time.hour}:${time.minute.toString().padLeft(2, '0')}";
+    return "${time.month}/${time.day}/${time.year}  "
+        "${time.hour}:${time.minute.toString().padLeft(2, '0')}";
   }
 }
 
@@ -161,12 +190,17 @@ class HistoryDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Saved Explanation"),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete),
+            icon: Icon(Icons.delete, color: theme.colorScheme.onSurface),
             tooltip: "Delete",
             onPressed: () async {
               final confirmed = await showDialog<bool>(
@@ -190,7 +224,7 @@ class HistoryDetailScreen extends StatelessWidget {
               );
 
               if (confirmed == true && context.mounted) {
-                Navigator.pop(context, item); // return item to delete
+                Navigator.pop(context, item);
               }
             },
           ),
@@ -210,12 +244,14 @@ class HistoryDetailScreen extends StatelessWidget {
 
             const SizedBox(height: 24),
 
-            // ⭐ Share-only row (matches ExplanationScreen)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.share),
+                  icon: Icon(
+                    Icons.share,
+                    color: theme.colorScheme.onSurface,
+                  ),
                   tooltip: "Share",
                   onPressed: () {
                     Share.share(item.explanation);

@@ -17,28 +17,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     settingsBox = Hive.box('settings');
     historyBox = Hive.box('history');
+
+    // Clean up old device-camera key
+    settingsBox.delete('useDeviceCamera');
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     final saveHistory =
         settingsBox.get('saveHistory', defaultValue: true) as bool;
 
-    final language =
-        settingsBox.get('language', defaultValue: 'English') as String;
+    var language = settingsBox.get('language', defaultValue: 'en');
+
+    // Normalize legacy values
+    if (language == "English") {
+      language = "en";
+      settingsBox.put('language', "en");
+    } else if (language == "Spanish") {
+      language = "es";
+      settingsBox.put('language', "es");
+    }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Settings"),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
       ),
       body: ListView(
         padding: const EdgeInsets.all(24.0),
         children: [
           // ⭐ HISTORY SECTION
-          const Text(
+          Text(
             "History",
-            style: TextStyle(
-              fontSize: 20,
+            style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -46,27 +61,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
 
           SwitchListTile(
-            title: const Text(
+            title: Text(
               "Save History",
-              style: TextStyle(fontSize: 18),
+              style: theme.textTheme.titleMedium,
             ),
-            subtitle: const Text(
+            subtitle: Text(
               "Automatically save explanations to your history.",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
             ),
             value: saveHistory,
             onChanged: (value) {
               settingsBox.put('saveHistory', value);
               setState(() {});
             },
+            thumbColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return theme.colorScheme.primary;
+              }
+              return theme.colorScheme.onSurfaceVariant;
+            }),
+            trackColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return theme.colorScheme.primary.withValues(alpha: 0.4);
+              }
+              return theme.colorScheme.surfaceContainerHighest;
+            }),
           ),
 
           const SizedBox(height: 12),
 
           TextButton.icon(
-            icon: const Icon(Icons.delete_forever, color: Colors.red),
-            label: const Text(
+            icon: Icon(
+              Icons.delete_forever,
+              color: theme.colorScheme.error,
+            ),
+            label: Text(
               "Delete All History",
-              style: TextStyle(color: Colors.red),
+              style: TextStyle(
+                color: theme.colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             onPressed: () async {
               final confirmed = await showDialog<bool>(
@@ -75,7 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 builder: (dialogContext) => AlertDialog(
                   title: const Text("Clear History"),
                   content: const Text(
-                      "Are you sure you want to delete all saved explanations?"),
+                    "Are you sure you want to delete all saved explanations?",
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () =>
@@ -96,10 +133,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 if (!context.mounted) return;
 
-                if (mounted) setState(() {});
+                setState(() {});
 
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("History cleared")),
+                  SnackBar(
+                    content: const Text("History cleared"),
+                    backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                    behavior: SnackBarBehavior.floating,
+                  ),
                 );
               }
             },
@@ -108,10 +149,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ⭐ LANGUAGE SECTION
-          const Text(
+          Text(
             "Language",
-            style: TextStyle(
-              fontSize: 20,
+            style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -120,17 +160,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           DropdownButtonFormField<String>(
             initialValue: language,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: "App Language",
-              border: OutlineInputBorder(),
+              labelStyle: theme.textTheme.bodyMedium,
+              border: const OutlineInputBorder(),
             ),
             items: const [
               DropdownMenuItem(
-                value: "English",
+                value: "en",
                 child: Text("English"),
               ),
               DropdownMenuItem(
-                value: "Spanish",
+                value: "es",
                 child: Text("Spanish"),
               ),
             ],
@@ -145,10 +186,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ⭐ ABOUT SECTION
-          const Text(
+          Text(
             "About",
-            style: TextStyle(
-              fontSize: 20,
+            style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -156,15 +196,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
 
           ListTile(
-            title: const Text("Version"),
-            subtitle: const Text("1.0.0"),
-            leading: const Icon(Icons.info_outline),
+            leading: Icon(
+              Icons.info_outline,
+              color: theme.colorScheme.primary,
+            ),
+            title: Text(
+              "Version",
+              style: theme.textTheme.titleMedium,
+            ),
+            subtitle: Text(
+              "1.0.0",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
+            ),
           ),
 
           ListTile(
-            title: const Text("Privacy Policy"),
-            subtitle: const Text("Read how your data is handled."),
-            leading: const Icon(Icons.privacy_tip_outlined),
+            leading: Icon(
+              Icons.privacy_tip_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: Text(
+              "Privacy Policy",
+              style: theme.textTheme.titleMedium,
+            ),
+            subtitle: Text(
+              "Read how your data is handled.",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
+            ),
             onTap: () {
               showDialog(
                 context: context,

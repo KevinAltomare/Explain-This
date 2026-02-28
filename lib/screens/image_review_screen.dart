@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'camera_screen.dart';
-import 'ocr_screen.dart';
+import 'explanation_screen.dart';
+import 'in_app_camera_screen.dart';
 
 class ImageReviewScreen extends StatelessWidget {
   final String imagePath;
@@ -13,9 +13,14 @@ class ImageReviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Review Photo'),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
       ),
       body: Column(
         children: [
@@ -31,45 +36,47 @@ class ImageReviewScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // RETAKE BUTTON — now reopens the camera
-                OutlinedButton(
-                  onPressed: () async {
-                    final newImagePath = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const CameraScreen(),
-                      ),
-                    );
-                    if (!context.mounted) return;
-
-
-                    if (newImagePath != null) {
+                // RETAKE BUTTON — simply go back to the camera
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (context) =>
-                              ImageReviewScreen(imagePath: newImagePath),
+                          builder: (_) => const InAppCameraScreen(),
                         ),
                       );
-                    }
-                  },
-                  child: const Text('Retake'),
+                    },
+                    child: Text(
+                      'Retake',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
                 ),
 
-                // USE THIS PHOTO — goes to OCR
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            OcrScreen(imagePath: imagePath),
-                      ),
-                    );
-                  },
-                  child: const Text('Use this photo'),
+                const SizedBox(width: 16),
+
+                // USE THIS PHOTO — go to explanation
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ExplanationScreen(imagePath: imagePath),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      'Use this photo',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
                 ),
               ],
             ),

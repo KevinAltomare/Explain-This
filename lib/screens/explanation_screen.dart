@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../services/openai_service.dart';
 import '../models/history_item.dart';
 import '../widgets/formatted_text.dart';
 import '../services/sanitizer.dart';
 import '../services/normalizer.dart';
+import '../services/ocr_service.dart';
+
+
+import '../errors/app_error.dart';
+import '../errors/error_screen.dart';
+
 
 class ExplanationScreen extends StatefulWidget {
-  final String extractedText;
+  final String imagePath;
 
   const ExplanationScreen({
     super.key,
-    required this.extractedText,
+    required this.imagePath,
   });
 
   @override
@@ -27,80 +34,179 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
   void initState() {
     super.initState();
     generatedTime = DateTime.now();
-    _loadExplanation();
+    _process();
   }
 
-  Future<void> _loadExplanation() async {
-    final raw = await OpenAIService.explainText(widget.extractedText);
-    final cleaned = sanitizeExplanation(raw);
-    final normalized = normalizeExplanation(cleaned);
+  // ------------------------------------------------------------
+  // OCR + MODEL PROCESSING (Phase 4 integrated)
+  // ------------------------------------------------------------
+  Future<void> _process() async {
+    try {
+      // Step 1: OCR
+      final extractedText = await OcrService.extractText(widget.imagePath);
 
-    setState(() {
-      explanation = normalized;
-    });
+      // Step 2: Generate English explanation
+      final raw = await OpenAIService.explainText(extractedText);
+      final cleaned = sanitizeExplanation(raw);
+      final normalized = normalizeExplanation(cleaned);
 
-    final settings = Hive.box('settings');
-    final saveHistory = settings.get('saveHistory', defaultValue: true);
+      // Step 3: Language setting (safe read)
+      String language = 'en';
+      try {
+        final settings = Hive.box('settings');
+        language = settings.get('language', defaultValue: 'en');
+      } catch (_) {
+        // If settings box is corrupted, fallback to English
+        language = 'en';
+      }
 
-    if (saveHistory) {
-      final box = Hive.box('history');
-      final item = HistoryItem(
-        extractedText: widget.extractedText,
-        explanation: normalized,
-        timestamp: generatedTime,
+      final finalOutput = language == 'es'
+          ? await _translateToSpanish(normalized)
+          : normalized;
+
+      if (!mounted) return;
+      setState(() {
+        explanation = finalOutput;
+      });
+
+      // Step 4: Save to history (safe write)
+      try {
+        final settings = Hive.box('settings');
+        final saveHistory = settings.get('saveHistory', defaultValue: true);
+
+        if (saveHistory) {
+          final box = Hive.box('history');
+          final item = HistoryItem(
+            extractedText: extractedText,
+            explanation: finalOutput,
+            timestamp: generatedTime,
+          );
+
+          box.add(item.toMap());
+        }
+      } catch (_) {
+        throw AppError(
+          AppErrorType.storageFailure,
+          "Your device had trouble saving the explanation.\nThe app will still continue normally.",
+        );
+      }
+
+    } on AppError catch (e) {
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ErrorScreen(
+            error: e,
+            onRetry: () {
+              Navigator.pop(context); // ErrorScreen
+              Navigator.pop(context); // ExplanationScreen
+              Navigator.pop(context); // ReviewPhotoScreen
+            },
+          ),
+        ),
       );
 
-      box.add(item.toMap());
+    } catch (_) {
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ErrorScreen(
+            error: AppError(
+              AppErrorType.unexpected,
+              "Something unexpected happened.\nPlease try again.",
+            ),
+            onRetry: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+          ),
+        ),
+      );
     }
   }
 
+  Future<String> _translateToSpanish(String englishText) async {
+    final prompt = """
+Translate the following explanation into clear, natural Spanish.
+Keep the meaning, tone, and structure. Avoid literal translations of legal or bureaucratic language.
+Use everyday Spanish that is easy for any adult to understand.
+
+$englishText
+""";
+
+    final translated = await OpenAIService.generateText(prompt);
+    return translated.trim();
+  }
+
+  // ------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Explanation")),
+      appBar: AppBar(
+        title: const Text("Explanation"),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+      ),
       bottomNavigationBar:
           explanation == null ? null : _buildBottomActionBar(context),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: explanation == null ? _buildLoading() : _buildContent(),
+        child: explanation == null
+            ? _buildLoading(theme)
+            : _buildContent(theme),
       ),
     );
   }
 
-  Widget _buildLoading() {
-    return const Center(
+  Widget _buildLoading(ThemeData theme) {
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 20),
+          CircularProgressIndicator(
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: 20),
           Text(
             "Analyzing document...",
-            style: TextStyle(fontSize: 18),
+            style: theme.textTheme.titleMedium,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildContent(ThemeData theme) {
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "Generated on ${_formatTimestamp(generatedTime)}",
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade600,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
 
           const SizedBox(height: 12),
-          Divider(color: Colors.grey.shade300, thickness: 1),
+
+          Divider(
+            color: theme.colorScheme.outlineVariant,
+            thickness: 1,
+          ),
+
           const SizedBox(height: 16),
 
-          // ⭐ Sanitized + formatted text
           FormattedText(text: explanation!),
 
           const SizedBox(height: 80),
@@ -109,21 +215,27 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
     );
   }
 
-  // ⭐ Updated unified bottom action bar
   Widget _buildBottomActionBar(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: theme.colorScheme.surface,
         border: Border(
-          top: BorderSide(color: Colors.grey.shade300),
+          top: BorderSide(
+            color: theme.colorScheme.outlineVariant,
+          ),
         ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            icon: const Icon(Icons.share),
+            icon: Icon(
+              Icons.share,
+              color: theme.colorScheme.onSurface,
+            ),
             tooltip: "Share",
             onPressed: () {
               Share.share(explanation!);

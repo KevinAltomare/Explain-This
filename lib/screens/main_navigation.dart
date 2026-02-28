@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
+import 'in_app_camera_screen.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -13,12 +13,10 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
 
-  // Each tab gets its own Navigator key
   final _scanKey = GlobalKey<NavigatorState>();
   final _historyKey = GlobalKey<NavigatorState>();
   final _settingsKey = GlobalKey<NavigatorState>();
 
-  // Helper to pick the right navigator
   GlobalKey<NavigatorState> _navigatorForIndex(int index) {
     switch (index) {
       case 0:
@@ -35,43 +33,72 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // We manually control all back navigation
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
 
         final currentNavigator =
-            _navigatorForIndex(_currentIndex).currentState!;
+            _navigatorForIndex(_currentIndex).currentState;
 
-        if (currentNavigator.canPop()) {
-          // Pop inside the current tab's stack
+        if (currentNavigator != null && currentNavigator.canPop()) {
           currentNavigator.pop();
         } else {
-          // No more routes → allow system back (exit app)
           Navigator.of(context).maybePop();
         }
       },
       child: Scaffold(
         body: Stack(
           children: [
-            _buildOffstageNavigator(0, _scanKey, const HomeScreen()),
-            _buildOffstageNavigator(1, _historyKey, const HistoryScreen()),
-            _buildOffstageNavigator(2, _settingsKey, const SettingsScreen()),
+            // SCAN TAB — now has its own Navigator again
+            Offstage(
+              offstage: _currentIndex != 0,
+              child: Navigator(
+                key: _scanKey,
+                onGenerateRoute: (settings) {
+                  return MaterialPageRoute(
+                    builder: (_) => const InAppCameraScreen(),
+                  );
+                },
+              ),
+            ),
+
+            Offstage(
+              offstage: _currentIndex != 1,
+              child: Navigator(
+                key: _historyKey,
+                onGenerateRoute: (settings) {
+                  return MaterialPageRoute(
+                    builder: (_) => const HistoryScreen(),
+                  );
+                },
+              ),
+            ),
+
+            Offstage(
+              offstage: _currentIndex != 2,
+              child: Navigator(
+                key: _settingsKey,
+                onGenerateRoute: (settings) {
+                  return MaterialPageRoute(
+                    builder: (_) => const SettingsScreen(),
+                  );
+                },
+              ),
+            ),
           ],
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) {
             if (index == _currentIndex) {
-              // User tapped the same tab again → reset that tab's navigation stack
-              final currentNavigator = _navigatorForIndex(index).currentState;
-              currentNavigator?.popUntil((route) => route.isFirst);
+              final nav = _navigatorForIndex(index).currentState;
+              nav?.popUntil((route) => route.isFirst);
             } else {
               setState(() {
                 _currentIndex = index;
               });
             }
           },
-          
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.camera_alt_outlined),
@@ -90,22 +117,6 @@ class _MainNavigationState extends State<MainNavigation> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // Builds each tab's independent navigation stack
-  Widget _buildOffstageNavigator(
-      int index, GlobalKey<NavigatorState> key, Widget screen) {
-    return Offstage(
-      offstage: _currentIndex != index,
-      child: Navigator(
-        key: key,
-        onGenerateRoute: (settings) {
-          return MaterialPageRoute(
-            builder: (_) => screen,
-          );
-        },
       ),
     );
   }
