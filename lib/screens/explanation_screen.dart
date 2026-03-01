@@ -4,15 +4,14 @@ import 'package:share_plus/share_plus.dart';
 
 import '../services/openai_service.dart';
 import '../models/history_item.dart';
+import '../models/explanation_result.dart';
 import '../widgets/formatted_text.dart';
 import '../services/sanitizer.dart';
 import '../services/normalizer.dart';
 import '../services/ocr_service.dart';
 
-
 import '../errors/app_error.dart';
 import '../errors/error_screen.dart';
-
 
 class ExplanationScreen extends StatefulWidget {
   final String imagePath;
@@ -27,7 +26,7 @@ class ExplanationScreen extends StatefulWidget {
 }
 
 class _ExplanationScreenState extends State<ExplanationScreen> {
-  String? explanation;
+  ExplanationResult? result;
   late final DateTime generatedTime;
 
   @override
@@ -38,38 +37,42 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
   }
 
   // ------------------------------------------------------------
-  // OCR + MODEL PROCESSING (Phase 4 integrated)
+  // OCR + MODEL PROCESSING
   // ------------------------------------------------------------
   Future<void> _process() async {
     try {
-      // Step 1: OCR
       final extractedText = await OcrService.extractText(widget.imagePath);
 
-      // Step 2: Generate English explanation
       final raw = await OpenAIService.explainText(extractedText);
-      final cleaned = sanitizeExplanation(raw);
+      final parsed = OpenAIService.parseExplanation(raw);
+
+      final cleaned = sanitizeExplanation(parsed.fullExplanation);
       final normalized = normalizeExplanation(cleaned);
 
-      // Step 3: Language setting (safe read)
       String language = 'en';
       try {
         final settings = Hive.box('settings');
         language = settings.get('language', defaultValue: 'en');
       } catch (_) {
-        // If settings box is corrupted, fallback to English
         language = 'en';
       }
 
-      final finalOutput = language == 'es'
+      final translatedExplanation = language == 'es'
           ? await _translateToSpanish(normalized)
           : normalized;
 
       if (!mounted) return;
       setState(() {
-        explanation = finalOutput;
+        result = ExplanationResult(
+          summary: parsed.summary,
+          requiredAction: parsed.requiredAction,
+          deadline: parsed.deadline,
+          moneyInvolved: parsed.moneyInvolved,
+          consequences: parsed.consequences,
+          fullExplanation: translatedExplanation,
+        );
       });
 
-      // Step 4: Save to history (safe write)
       try {
         final settings = Hive.box('settings');
         final saveHistory = settings.get('saveHistory', defaultValue: true);
@@ -78,7 +81,12 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
           final box = Hive.box('history');
           final item = HistoryItem(
             extractedText: extractedText,
-            explanation: finalOutput,
+            summary: parsed.summary,
+            requiredAction: parsed.requiredAction,
+            deadline: parsed.deadline,
+            moneyInvolved: parsed.moneyInvolved,
+            consequences: parsed.consequences,
+            fullExplanation: translatedExplanation,
             timestamp: generatedTime,
           );
 
@@ -94,15 +102,14 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
 
-      Navigator.push(
-        context,
+      Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ErrorScreen(
             error: e,
             onRetry: () {
-              Navigator.pop(context); // ErrorScreen
-              Navigator.pop(context); // ExplanationScreen
-              Navigator.pop(context); // ReviewPhotoScreen
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
             },
           ),
         ),
@@ -111,8 +118,7 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
     } catch (_) {
       if (!mounted) return;
 
-      Navigator.push(
-        context,
+      Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ErrorScreen(
             error: AppError(
@@ -120,9 +126,9 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
               "Something unexpected happened.\nPlease try again.",
             ),
             onRetry: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-              Navigator.pop(context);
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
             },
           ),
         ),
@@ -144,6 +150,18 @@ $englishText
   }
 
   // ------------------------------------------------------------
+  // SEMANTIC FIELD CHECK
+  // ------------------------------------------------------------
+  bool _isMeaningful(String value) {
+    final v = value.trim().toLowerCase();
+    if (v.isEmpty) return false;
+    if (v == "none stated") return false;
+    if (v == "none stated.") return false;
+    if (v == "none") return false;
+    return true;
+  }
+
+  // ------------------------------------------------------------
   // UI
   // ------------------------------------------------------------
   @override
@@ -158,10 +176,10 @@ $englishText
         elevation: 0,
       ),
       bottomNavigationBar:
-          explanation == null ? null : _buildBottomActionBar(context),
+          result == null ? null : _buildBottomActionBar(context),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: explanation == null
+        child: result == null
             ? _buildLoading(theme)
             : _buildContent(theme),
       ),
@@ -187,6 +205,46 @@ $englishText
   }
 
   Widget _buildContent(ThemeData theme) {
+    final r = result!;
+
+    final fields = [
+      _FieldData(
+        icon: Icons.description_outlined,
+        label: "Summary",
+        value: r.summary,
+        alwaysShow: false,
+      ),
+      _FieldData(
+        icon: Icons.check_circle_outline,
+        label: "Required Action",
+        value: r.requiredAction,
+        alwaysShow: true,
+      ),
+      _FieldData(
+        icon: Icons.schedule_outlined,
+        label: "Deadline",
+        value: r.deadline,
+        alwaysShow: false,
+      ),
+      _FieldData(
+        icon: Icons.attach_money,
+        label: "Money Involved",
+        value: r.moneyInvolved,
+        alwaysShow: false,
+      ),
+      _FieldData(
+        icon: Icons.warning_amber_outlined,
+        label: "Consequences",
+        value: r.consequences,
+        alwaysShow: false,
+      ),
+    ];
+
+    final visibleFields = fields.where((f) {
+      if (f.alwaysShow) return true;
+      return _isMeaningful(f.value);
+    }).toList();
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,18 +256,61 @@ $englishText
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          Divider(
-            color: theme.colorScheme.outlineVariant,
-            thickness: 1,
-          ),
-
           const SizedBox(height: 16),
 
-          FormattedText(text: explanation!),
+          if (visibleFields.isNotEmpty) ...[
+            for (final field in visibleFields) _buildPremiumCard(theme, field),
+            const SizedBox(height: 24),
+          ],
+
+          FormattedText(text: r.fullExplanation),
 
           const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumCard(ThemeData theme, _FieldData data) {
+    final bg = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            data.icon,
+            size: 28,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data.label,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  data.value,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -223,22 +324,17 @@ $englishText
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         border: Border(
-          top: BorderSide(
-            color: theme.colorScheme.outlineVariant,
-          ),
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            icon: Icon(
-              Icons.share,
-              color: theme.colorScheme.onSurface,
-            ),
+            icon: Icon(Icons.share, color: theme.colorScheme.onSurface),
             tooltip: "Share",
             onPressed: () {
-              Share.share(explanation!);
+              Share.share(result!.fullExplanation);
             },
           ),
         ],
@@ -250,4 +346,18 @@ $englishText
     return "${time.month}/${time.day}/${time.year}  "
         "${time.hour}:${time.minute.toString().padLeft(2, '0')}";
   }
+}
+
+class _FieldData {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool alwaysShow;
+
+  _FieldData({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.alwaysShow = false,
+  });
 }

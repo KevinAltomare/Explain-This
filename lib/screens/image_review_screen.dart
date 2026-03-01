@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'explanation_screen.dart';
-import 'in_app_camera_screen.dart';
+import 'main_navigation.dart'; // <-- import the global mainNavKey
 
 class ImageReviewScreen extends StatelessWidget {
   final String imagePath;
@@ -37,16 +37,10 @@ class ImageReviewScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                // RETAKE BUTTON — simply go back to the camera
                 Expanded(
                   child: TextButton(
                     onPressed: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const InAppCameraScreen(),
-                        ),
-                      );
+                      Navigator.of(context).pop();
                     },
                     child: Text(
                       'Retake',
@@ -60,12 +54,15 @@ class ImageReviewScreen extends StatelessWidget {
 
                 const SizedBox(width: 16),
 
-                // USE THIS PHOTO — go to explanation
                 Expanded(
                   child: FilledButton(
                     onPressed: () {
-                      Navigator.push(
-                        context,
+                      // IMPORTANT FIX:
+                      // Remove ImageReviewScreen from the Scan tab navigator
+                      Navigator.of(context).pop();
+
+                      // Then push ExplanationScreen on the main navigator
+                      mainNavKey.currentState!.push(
                         MaterialPageRoute(
                           builder: (_) =>
                               ExplanationScreen(imagePath: imagePath),

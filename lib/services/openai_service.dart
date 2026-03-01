@@ -6,6 +6,8 @@ import '../errors/app_error.dart';
 import '../secrets.dart';
 import 'dart:async';
 
+import '../models/explanation_result.dart'; // ← make sure this import exists
+
 class OpenAIService {
   static const String _url = "https://api.openai.com/v1/chat/completions";
 
@@ -96,6 +98,21 @@ class OpenAIService {
   }
 
   // ------------------------------------------------------------
+  // PARSE EXPLANATION JSON (added here)
+  // ------------------------------------------------------------
+  static ExplanationResult parseExplanation(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      return ExplanationResult.fromJson(decoded);
+    } catch (_) {
+      throw AppError(
+        AppErrorType.invalidResponse,
+        "The explanation service returned invalid data.",
+      );
+    }
+  }
+
+  // ------------------------------------------------------------
   // GENERATE TEXT (used for Spanish translation)
   // ------------------------------------------------------------
   static Future<String> generateText(String prompt) async {
@@ -109,7 +126,7 @@ class OpenAIService {
   }
 
   // ------------------------------------------------------------
-  // EXPLAIN TEXT (main feature)
+  // EXPLAIN TEXT (main feature) — JSON STRUCTURED VERSION
   // ------------------------------------------------------------
   static Future<String> explainText(String extractedText) async {
     return _sendRequest({
@@ -118,22 +135,21 @@ class OpenAIService {
         {
           "role": "system",
           "content":
-              "You explain documents in clear, calm, adult language. Your goal is to help the reader understand the meaning of the text and what, if anything, they need to do. You remove irrelevant details, simplify complex language, and avoid legal or bureaucratic jargon. You do not add information that is not present in the original text."
+              "You are a document clarity assistant. Your job is to explain official documents in simple, calm, everyday English so an average adult can quickly understand what the document means and what, if anything, they need to do.\n\n"
+              "Extract only what is clearly stated. Do not guess or add information. If something is unclear, say that it is unclear. Remove greetings, signatures, disclaimers, and formatting noise. Keep the tone neutral, calm, and practical.\n\n"
+              "Return your answer as valid JSON with the following fields:\n"
+              "- summary: A short explanation of what the document is about.\n"
+              "- required_action: What the reader must do, if anything. If no action is required, write: \"No action appears to be required.\"\n"
+              "- deadline: Any dates or deadlines mentioned. If none, write: \"None stated.\"\n"
+              "- money_involved: Any payments, charges, refunds, or amounts mentioned. If none, write: \"None stated.\"\n"
+              "- consequences: Any consequences of ignoring or delaying action. If none, write: \"None stated.\"\n"
+              "- full_explanation: A natural-language explanation written in multiple short paragraphs. Use lists only when they make sense for clarity. Do not use markdown or emojis.\n\n"
+              "Do not include any text outside the JSON."
         },
         {
           "role": "user",
           "content":
-              "Rewrite the following text so the reader quickly understands what it means and any actions they may need to take.\n\n"
-                  "Your explanation should:\n"
-                  "- Use plain, natural English\n"
-                  "- Focus on meaning, not formatting\n"
-                  "- Remove greetings, closings, signatures, names, and filler\n"
-                  "- Avoid legal jargon unless necessary for accuracy\n"
-                  "- Keep the tone neutral, calm, and helpful\n"
-                  "- Only describe actions that are clearly required\n"
-                  "- Do not use Markdown, headings, bullet points, or emojis\n"
-                  "- Do not mention that you are rewriting the text\n\n"
-                  "Text:\n$extractedText"
+              "Explain the following document and extract the required information.\n\nText:\n$extractedText"
         }
       ],
       "temperature": 0.2,

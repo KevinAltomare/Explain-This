@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'in_app_camera_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
-import 'in_app_camera_screen.dart';
+
+// GLOBAL main navigator key (used by ImageReviewScreen)
+final GlobalKey<NavigatorState> mainNavKey = GlobalKey<NavigatorState>();
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -13,110 +16,108 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
 
-  final _scanKey = GlobalKey<NavigatorState>();
-  final _historyKey = GlobalKey<NavigatorState>();
-  final _settingsKey = GlobalKey<NavigatorState>();
+  // Keys for each tab's nested navigator
+  final GlobalKey<NavigatorState> _scanKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _historyKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _settingsKey = GlobalKey<NavigatorState>();
 
-  GlobalKey<NavigatorState> _navigatorForIndex(int index) {
-    switch (index) {
-      case 0:
-        return _scanKey;
-      case 1:
-        return _historyKey;
-      case 2:
-        return _settingsKey;
-      default:
-        return _scanKey;
-    }
-  }
+  int _cameraInstanceId = 0;
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
+    return Scaffold(
+      body: Navigator(
+        key: mainNavKey,
+        onGenerateRoute: (_) {
+          return MaterialPageRoute(
+            builder: (_) => Stack(
+              children: [
+                // SCAN TAB — visible only when selected
+                if (_currentIndex == 0)
+                  Navigator(
+                    key: _scanKey,
+                    onGenerateRoute: (settings) {
+                      return MaterialPageRoute(
+                        builder: (_) => InAppCameraScreen(
+                          key: ValueKey(_cameraInstanceId),
+                        ),
+                      );
+                    },
+                  ),
 
-        final currentNavigator =
-            _navigatorForIndex(_currentIndex).currentState;
+                // HISTORY TAB
+                if (_currentIndex == 1)
+                  Navigator(
+                    key: _historyKey,
+                    onGenerateRoute: (settings) {
+                      return MaterialPageRoute(
+                        builder: (_) => const HistoryScreen(),
+                      );
+                    },
+                  ),
 
-        if (currentNavigator != null && currentNavigator.canPop()) {
-          currentNavigator.pop();
-        } else {
-          Navigator.of(context).maybePop();
-        }
-      },
-      child: Scaffold(
-        body: Stack(
-          children: [
-            // SCAN TAB — now has its own Navigator again
-            Offstage(
-              offstage: _currentIndex != 0,
-              child: Navigator(
-                key: _scanKey,
-                onGenerateRoute: (settings) {
-                  return MaterialPageRoute(
-                    builder: (_) => const InAppCameraScreen(),
-                  );
-                },
-              ),
+                // SETTINGS TAB
+                if (_currentIndex == 2)
+                  Navigator(
+                    key: _settingsKey,
+                    onGenerateRoute: (settings) {
+                      return MaterialPageRoute(
+                        builder: (_) => const SettingsScreen(),
+                      );
+                    },
+                  ),
+              ],
             ),
+          );
+        },
+      ),
 
-            Offstage(
-              offstage: _currentIndex != 1,
-              child: Navigator(
-                key: _historyKey,
-                onGenerateRoute: (settings) {
-                  return MaterialPageRoute(
-                    builder: (_) => const HistoryScreen(),
-                  );
-                },
-              ),
-            ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
+          // 1. Clear any pushed screens above the tab root
+          if (mainNavKey.currentState != null &&
+              mainNavKey.currentState!.canPop()) {
+            mainNavKey.currentState!.popUntil((route) => route.isFirst);
+          }
 
-            Offstage(
-              offstage: _currentIndex != 2,
-              child: Navigator(
-                key: _settingsKey,
-                onGenerateRoute: (settings) {
-                  return MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) {
-            if (index == _currentIndex) {
-              final nav = _navigatorForIndex(index).currentState;
-              nav?.popUntil((route) => route.isFirst);
-            } else {
-              setState(() {
-                _currentIndex = index;
-              });
+          // 2. Tapping the same tab (Scan)
+          if (index == _currentIndex) {
+            if (index == 0) {
+              // Force a fresh camera
+              _cameraInstanceId++;
+              setState(() {});
             }
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.camera_alt_outlined),
-              selectedIcon: Icon(Icons.camera_alt),
-              label: "Scan",
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.history_outlined),
-              selectedIcon: Icon(Icons.history),
-              label: "History",
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: "Settings",
-            ),
-          ],
-        ),
+            return;
+          }
+
+          // 3. Switch tabs
+          setState(() {
+            _currentIndex = index;
+          });
+
+          // 4. Switching TO Scan → rebuild camera
+          if (index == 0) {
+            _cameraInstanceId++;
+          }
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.camera_alt_outlined),
+            selectedIcon: Icon(Icons.camera_alt),
+            label: 'Scan',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
       ),
     );
   }

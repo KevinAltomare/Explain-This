@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/history_item.dart';
-import '../widgets/formatted_text.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/history_item.dart';
+import '../widgets/formatted_text.dart';
 
-String _extractTitle(String explanation) {
-  var cleaned = explanation
-      .replaceFirst("What you need to know:", "")
-      .replaceFirst("What you need to do:", "")
-      .trim();
+String _extractTitleFromSummary(String summary, String fullExplanation) {
+  final base = summary.trim().isNotEmpty ? summary.trim() : fullExplanation.trim();
+  if (base.isEmpty) return "Saved explanation";
 
-  final end = cleaned.indexOf('.');
+  final end = base.indexOf('.');
   if (end != -1) {
-    return cleaned.substring(0, end + 1).trim();
+    return base.substring(0, end + 1).trim();
   }
 
-  return cleaned.length > 60 ? '${cleaned.substring(0, 60)}…' : cleaned;
+  return base.length > 80 ? '${base.substring(0, 80)}…' : base;
 }
 
 class HistoryScreen extends StatelessWidget {
@@ -52,7 +50,10 @@ class HistoryScreen extends StatelessWidget {
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
-              final title = _extractTitle(item.explanation);
+              final title = _extractTitleFromSummary(
+                item.summary,
+                item.fullExplanation,
+              );
 
               return Dismissible(
                 key: ValueKey(item.timestamp.toIso8601String()),
@@ -74,7 +75,6 @@ class HistoryScreen extends StatelessWidget {
                   final originalIndex = box.length - 1 - index;
                   box.deleteAt(originalIndex);
                 },
-
                 child: Card(
                   elevation: 1,
                   color: theme.colorScheme.surfaceContainerLow,
@@ -84,13 +84,24 @@ class HistoryScreen extends StatelessWidget {
                   margin: const EdgeInsets.symmetric(vertical: 8),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      Navigator.push(
+                    onTap: () async {
+                      final deletedItem = await Navigator.push<HistoryItem?>(
                         context,
                         MaterialPageRoute(
                           builder: (_) => HistoryDetailScreen(item: item),
                         ),
                       );
+
+                      if (deletedItem != null) {
+                        final idx = box.values.toList().indexWhere((raw) {
+                          final map = Map<String, dynamic>.from(raw);
+                          final loaded = HistoryItem.fromMap(map);
+                          return loaded.timestamp == deletedItem.timestamp;
+                        });
+                        if (idx != -1) {
+                          box.deleteAt(idx);
+                        }
+                      }
                     },
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -103,7 +114,6 @@ class HistoryScreen extends StatelessWidget {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 12),
-
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,7 +127,6 @@ class HistoryScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-
                                 Text(
                                   _formatTimestamp(item.timestamp),
                                   style: theme.textTheme.bodySmall?.copyWith(
@@ -188,9 +197,56 @@ class HistoryDetailScreen extends StatelessWidget {
     required this.item,
   });
 
+  bool _isMeaningful(String value) {
+    final v = value.trim().toLowerCase();
+    if (v.isEmpty) return false;
+    if (v == "none stated") return false;
+    if (v == "none stated.") return false;
+    if (v == "none") return false;
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    final fields = [
+      _DetailFieldData(
+        icon: Icons.description_outlined,
+        label: "Summary",
+        value: item.summary,
+        alwaysShow: false,
+      ),
+      _DetailFieldData(
+        icon: Icons.check_circle_outline,
+        label: "Required Action",
+        value: item.requiredAction,
+        alwaysShow: true,
+      ),
+      _DetailFieldData(
+        icon: Icons.schedule_outlined,
+        label: "Deadline",
+        value: item.deadline,
+        alwaysShow: false,
+      ),
+      _DetailFieldData(
+        icon: Icons.attach_money,
+        label: "Money Involved",
+        value: item.moneyInvolved,
+        alwaysShow: false,
+      ),
+      _DetailFieldData(
+        icon: Icons.warning_amber_outlined,
+        label: "Consequences",
+        value: item.consequences,
+        alwaysShow: false,
+      ),
+    ];
+
+    final visibleFields = fields.where((f) {
+      if (f.alwaysShow) return true;
+      return _isMeaningful(f.value);
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -205,22 +261,33 @@ class HistoryDetailScreen extends StatelessWidget {
             onPressed: () async {
               final confirmed = await showDialog<bool>(
                 context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text("Delete Entry"),
-                  content: const Text(
-                    "Are you sure you want to delete this explanation?",
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text("Cancel"),
+                builder: (context) {
+                  final dialogTheme = Theme.of(context);
+                  return AlertDialog(
+                    title: Text(
+                      "Delete Entry",
+                      style: dialogTheme.textTheme.titleLarge?.copyWith(
+                        color: dialogTheme.colorScheme.onSurface,
+                      ),
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text("Delete"),
+                    content: Text(
+                      "Are you sure you want to delete this explanation?",
+                      style: dialogTheme.textTheme.bodyMedium?.copyWith(
+                        color: dialogTheme.colorScheme.onSurface,
+                      ),
                     ),
-                  ],
-                ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text("Cancel"),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text("Delete"),
+                      ),
+                    ],
+                  );
+                },
               );
 
               if (confirmed == true && context.mounted) {
@@ -230,20 +297,34 @@ class HistoryDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: SingleChildScrollView(
-                child: FormattedText(text: item.explanation),
+            Text(
+              "Saved on ${_formatTimestamp(item.timestamp)}",
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
-
-            const SizedBox(height: 24),
-
+            const SizedBox(height: 16),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (visibleFields.isNotEmpty) ...[
+                      for (final field in visibleFields)
+                        _buildPremiumCard(theme, field),
+                      const SizedBox(height: 24),
+                    ],
+                    FormattedText(text: item.fullExplanation),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -254,16 +335,79 @@ class HistoryDetailScreen extends StatelessWidget {
                   ),
                   tooltip: "Share",
                   onPressed: () {
-                    Share.share(item.explanation);
+                    Share.share(item.fullExplanation);
                   },
                 ),
               ],
             ),
-
             const SizedBox(height: 16),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildPremiumCard(ThemeData theme, _DetailFieldData data) {
+    final bg = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            data.icon,
+            size: 28,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data.label,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  data.value,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimestamp(DateTime time) {
+    return "${time.month}/${time.day}/${time.year}  "
+        "${time.hour}:${time.minute.toString().padLeft(2, '0')}";
+  }
+}
+
+class _DetailFieldData {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool alwaysShow;
+
+  _DetailFieldData({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.alwaysShow = false,
+  });
 }
