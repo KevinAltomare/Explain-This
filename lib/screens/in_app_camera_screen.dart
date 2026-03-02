@@ -308,12 +308,9 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: _isInitialized
+        body: _isInitialized
             ? _buildCameraPreview(theme)
             : _buildLoading(theme),
-      ),
     );
   }
 
@@ -444,10 +441,13 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
         ),
 
       // FLASH OVERLAY
-      FadeTransition(
-        opacity: _flashOpacity,
-        child: Container(color: Colors.white),
-      ),
+      IgnorePointer(
+        ignoring: true,
+        child: FadeTransition(
+          opacity: _flashOpacity,
+          child: Container(color: Colors.white),
+        ),
+      ),  
 
       // TORCH BUTTON
       Positioned(
