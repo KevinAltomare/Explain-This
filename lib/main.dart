@@ -10,7 +10,7 @@ void main() async {
   await Hive.openBox('history');
   await Hive.openBox('settings');
 
-
+  Hive.box('settings').put('hasCompletedOnboarding', false);
 
   runApp(const ExplainThisApp());
 }

@@ -46,10 +46,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  void _skip() {
-    _finishOnboarding();
-  }
-
   Future<void> _finishOnboarding() async {
     final settingsBox = Hive.box('settings');
     await settingsBox.put('hasCompletedOnboarding', true);
@@ -59,104 +55,90 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    final gradientColors = isDark
-        ? [
-            theme.colorScheme.surface,
-            theme.colorScheme.surfaceContainerHighest,
-          ]
-        : [
-            theme.colorScheme.surface,
-            theme.colorScheme.surfaceContainerLowest,
-          ];
-
     final isLastPage = _currentPage == _pages.length - 1;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: gradientColors,
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Skip button
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _skip,
-                  child: Text(
-                    "Skip",
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+      backgroundColor: theme.colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 24),
+
+            // Pages
+            Expanded(
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: _pages.length,
+                onPageChanged: (index) {
+                  setState(() {
+                    _currentPage = index;
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final page = _pages[index];
+                  return _OnboardingPage(page: page);
+                },
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Page indicators
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _pages.length,
+                (index) {
+                  final active = index == _currentPage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    width: active ? 10 : 8,
+                    height: active ? 10 : 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: active
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outlineVariant,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // CTA button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _goNext,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                  child: Text(isLastPage ? "Get started" : "Next"),
                 ),
               ),
+            ),
 
-              // Pages
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: _pages.length,
-                  onPageChanged: (index) {
-                    setState(() {
-                      _currentPage = index;
-                    });
-                  },
-                  itemBuilder: (context, index) {
-                    final page = _pages[index];
-                    return _OnboardingPage(page: page);
-                  },
+            // Skip link
+            TextButton(
+              onPressed: _finishOnboarding,
+              child: Text(
+                "Skip",
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
+            ),
 
-              const SizedBox(height: 16),
-
-              // Page indicators
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  _pages.length,
-                  (index) {
-                    final active = index == _currentPage;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      width: active ? 10 : 8,
-                      height: active ? 10 : 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: active
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.outlineVariant,
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // CTA button
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _goNext,
-                    child: Text(isLastPage ? "Get started" : "Next"),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            const SizedBox(height: 16),
+          ],
         ),
       ),
     );
@@ -183,16 +165,17 @@ class _OnboardingPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // App icon instead of generic Material icons
+          // App icon
           Image.asset(
-            'assets/icon/app_icon.png',
-            width: 90,
-            height: 90,
-          ),
+              'assets/icon/app_icon.png',
+              width: 110,
+              height: 110,
+            ),
+          
 
           const SizedBox(height: 32),
 
@@ -201,6 +184,7 @@ class _OnboardingPage extends StatelessWidget {
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface,
             ),
           ),
 
@@ -210,7 +194,7 @@ class _OnboardingPage extends StatelessWidget {
             page.body,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              color: theme.colorScheme.onSurfaceVariant,
               height: 1.4,
             ),
           ),
