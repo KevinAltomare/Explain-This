@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'screens/main_navigation.dart';
 import 'screens/onboarding_screen.dart';
+import 'package:explain_this/services/billing_service.dart';
+
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   await Hive.initFlutter();
   await Hive.openBox('history');
   await Hive.openBox('settings');
 
-  Hive.box('settings').put('hasCompletedOnboarding', false);
+  await BillingService.instance.init();
 
   runApp(const ExplainThisApp());
 }
@@ -48,6 +51,7 @@ class RootDecider extends StatefulWidget {
 class _RootDeciderState extends State<RootDecider> {
   bool _initialized = false;
   bool _showOnboarding = false;
+  bool _isPremium = false;
 
   @override
   void initState() {
@@ -55,13 +59,16 @@ class _RootDeciderState extends State<RootDecider> {
     _loadFlag();
   }
 
-  void _loadFlag() {
+  void _loadFlag() async {
     final settings = Hive.box('settings');
     final hasCompleted =
         settings.get('hasCompletedOnboarding', defaultValue: false) as bool;
 
+    final premium = await BillingService.instance.isPremium();    
+
     setState(() {
       _showOnboarding = !hasCompleted;
+      _isPremium = premium; // true to test premium features
       _initialized = true;
     });
   }
@@ -84,6 +91,6 @@ class _RootDeciderState extends State<RootDecider> {
       return OnboardingScreen(onFinished: _finishOnboarding);
     }
 
-    return const MainNavigation();
+    return MainNavigation(isPremium: _isPremium);
   }
 }

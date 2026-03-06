@@ -7,7 +7,12 @@ import 'settings_screen.dart';
 final GlobalKey<NavigatorState> mainNavKey = GlobalKey<NavigatorState>();
 
 class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+  final bool isPremium;   // <-- NEW
+
+  const MainNavigation({
+    super.key,
+    required this.isPremium,   // <-- NEW
+  });
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -32,7 +37,7 @@ class _MainNavigationState extends State<MainNavigation> {
           return MaterialPageRoute(
             builder: (_) => Stack(
               children: [
-                // SCAN TAB — visible only when selected
+                // SCAN TAB
                 if (_currentIndex == 0)
                   Navigator(
                     key: _scanKey,
@@ -56,13 +61,15 @@ class _MainNavigationState extends State<MainNavigation> {
                     },
                   ),
 
-                // SETTINGS TAB
+                // SETTINGS TAB — pass premium flag
                 if (_currentIndex == 2)
                   Navigator(
                     key: _settingsKey,
                     onGenerateRoute: (settings) {
                       return MaterialPageRoute(
-                        builder: (_) => const SettingsScreen(),
+                        builder: (_) => SettingsScreen(
+                          isPremium: widget.isPremium,   // <-- NEW
+                        ),
                       );
                     },
                   ),
@@ -84,7 +91,6 @@ class _MainNavigationState extends State<MainNavigation> {
           // 2. Tapping the same tab (Scan)
           if (index == _currentIndex) {
             if (index == 0) {
-              // Force a fresh camera
               _cameraInstanceId++;
               setState(() {});
             }

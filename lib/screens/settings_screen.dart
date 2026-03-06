@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../screens/paywall_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final bool isPremium;
+
+  const SettingsScreen({
+    super.key,
+    required this.isPremium, 
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -50,6 +56,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24.0),
         children: [
+          // ⭐ Premium Badge
+          if (widget.isPremium)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Center(
+          child: Chip(
+            label: Text(
+              "Premium",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            avatar: Icon(
+              Icons.star,
+              color: theme.colorScheme.onPrimary,
+            ),
+            backgroundColor: theme.colorScheme.primary,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          ),
+        ),
+      ),
           // ⭐ HISTORY SECTION
           Text(
             "History",
@@ -248,6 +276,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
+
+          const SizedBox(height: 32),
+
+          // ⭐ UPGRADE SECTION (only for non-premium users)
+          if (!widget.isPremium)
+            ListTile(
+              leading: Icon(
+                Icons.star,
+                color: theme.colorScheme.primary,
+              ),
+              title: Text(
+                "Upgrade to Premium",
+                style: theme.textTheme.titleMedium,
+              ),
+              subtitle: Text(
+                "Unlock unlimited explanations.",
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PaywallScreen(),
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );

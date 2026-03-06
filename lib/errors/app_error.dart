@@ -23,6 +23,9 @@ enum AppErrorType {
 
   // Catch‑all
   unexpected,
+
+  // Usage Limit
+  usageLimitReached,
 }
 
 class AppError {

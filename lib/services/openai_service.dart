@@ -6,7 +6,7 @@ import '../errors/app_error.dart';
 import '../secrets.dart';
 import 'dart:async';
 
-import '../models/explanation_result.dart'; // ← make sure this import exists
+import '../models/explanation_result.dart'; 
 
 class OpenAIService {
   static const String _url = "https://api.openai.com/v1/chat/completions";

@@ -9,9 +9,13 @@ import '../widgets/formatted_text.dart';
 import '../services/sanitizer.dart';
 import '../services/normalizer.dart';
 import '../services/ocr_service.dart';
+import 'package:explain_this/services/billing_service.dart';
 
 import '../errors/app_error.dart';
 import '../errors/error_screen.dart';
+import '../services/usage_manager.dart';
+import '../screens/paywall_screen.dart';
+
 
 class ExplanationScreen extends StatefulWidget {
   final String imagePath;
@@ -41,6 +45,27 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
   // ------------------------------------------------------------
   Future<void> _process() async {
     try {
+
+    final bool isPremium = await BillingService.instance.isPremium();
+
+    final allowed = await UsageManager.canUseExplanation(isPremium: isPremium);
+    
+    if (!isPremium && !allowed) {
+      if (!mounted) return;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const PaywallScreen(),
+          ),
+      );
+      return;
+    }
+
+    await UsageManager.incrementUsage();
+
+
+
+
       final extractedText = await OcrService.extractText(widget.imagePath);
 
       final raw = await OpenAIService.explainText(extractedText);

@@ -22,6 +22,8 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   CameraController? _controller;
   bool _isInitialized = false;
 
+  bool _initializing = true; // 🔥 prevents double init on cold start
+
   double _currentZoom = 1.0;
   double _baseZoom = 1.0;
   double _maxZoom = 1.0;
@@ -87,24 +89,57 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       curve: Curves.easeOut,
     );
 
-    _startCameraFlow();
+    // 🔥 Cold-start fix: delay camera init until after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _startCameraFlow();
+      _initializing = false; // 🔥 allow lifecycle resume AFTER first init
+    });
   }
 
+  // ------------------------------------------------------------
+  // LIFECYCLE — DISPOSE ON PAUSE, RESTART ON RESUME
+  // ------------------------------------------------------------
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-
-    if (controller == null || !controller.value.isInitialized) return;
+    if (!mounted) return;
 
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
-      controller.dispose();
+      _controller?.dispose();
       _controller = null;
       _isInitialized = false;
-    } else if (state == AppLifecycleState.resumed) {
-      _startCameraFlow();
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      if (_initializing) return; // 🔥 prevent double init on cold start
+      if (!_isRestartingCamera) {
+        _restartCameraSafely();
+      }
     }
   }
+
+  Future<void> _restartCameraSafely() async {
+    if (!mounted) return;
+
+    setState(() => _isRestartingCamera = true);
+
+    try {
+      await _controller?.dispose();
+      _controller = null;
+      _isInitialized = false;
+
+      await Future.delayed(const Duration(milliseconds: 150));
+      await _startCameraFlow();
+    } finally {
+      if (mounted) {
+        setState(() => _isRestartingCamera = false);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
 
   Future<void> _pickFromGallery() async {
     try {
@@ -308,9 +343,9 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-        body: _isInitialized
-            ? _buildCameraPreview(theme)
-            : _buildLoading(theme),
+      body: _isInitialized
+          ? _buildCameraPreview(theme)
+          : _buildLoading(theme),
     );
   }
 
@@ -323,227 +358,217 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   }
 
   Widget _buildCameraPreview(ThemeData theme) {
-  final controller = _controller;
-  if (controller == null || !controller.value.isInitialized) {
-    return _buildLoading(theme);
-  }
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return _buildLoading(theme);
+    }
 
-  return Stack(
-    children: [
-      // CAMERA PREVIEW + GESTURES
-      Positioned.fill(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: _handleFocusTap,
-          onScaleStart: (details) {
-            _baseZoom = _currentZoom;
-          },
-          onScaleUpdate: (details) async {
-            final controller = _controller;
-            if (controller == null || !controller.value.isInitialized) return;
-
-            if (!_supportsZoom) {
-              _showZoomUnsupportedMessage();
-              return;
-            }
-
-            if (details.scale.isNaN || details.scale <= 0) return;
-
-            final newZoom =
-                (_baseZoom * details.scale).clamp(_minZoom, _maxZoom);
-
-            _currentZoom = newZoom;
-
-            try {
-              await controller.setZoomLevel(newZoom);
-            } catch (_) {
-              _showZoomUnsupportedMessage();
-            }
-          },
-              child: CameraPreview(controller),
-            ),
-          ),
-      
-
-      // RESTART OVERLAY
-      if (_isRestartingCamera)
+    return Stack(
+      children: [
         Positioned.fill(
-          child: Container(
-            color: Colors.black.withValues(alpha:0.6),
-            child: const Center(
-              child: SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  color: Colors.white,
-                ),
-              ),
-            ),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: _handleFocusTap,
+            onScaleStart: (details) {
+              _baseZoom = _currentZoom;
+            },
+            onScaleUpdate: (details) async {
+              final controller = _controller;
+              if (controller == null || !controller.value.isInitialized) return;
+
+              if (!_supportsZoom) {
+                _showZoomUnsupportedMessage();
+                return;
+              }
+
+              if (details.scale.isNaN || details.scale <= 0) return;
+
+              final newZoom =
+                  (_baseZoom * details.scale).clamp(_minZoom, _maxZoom);
+
+              _currentZoom = newZoom;
+
+              try {
+                await controller.setZoomLevel(newZoom);
+              } catch (_) {
+                _showZoomUnsupportedMessage();
+              }
+            },
+            child: CameraPreview(controller),
           ),
         ),
 
-      // ZOOM UNSUPPORTED MESSAGE
-      Positioned(
-        bottom: 140,
-        left: 0,
-        right: 0,
-        child: AnimatedOpacity(
-          opacity: _zoomUnsupported ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 250),
-          child: Center(
+        if (_isRestartingCamera)
+          Positioned.fill(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha:0.6),
-                borderRadius: BorderRadius.circular(8),
+              color: Colors.black.withValues(alpha:0.6),
+              child: const Center(
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-              child: const Text(
-                "Zoom not supported on this device",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+            ),
+          ),
+
+        Positioned(
+          bottom: 140,
+          left: 0,
+          right: 0,
+          child: AnimatedOpacity(
+            opacity: _zoomUnsupported ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha:0.6),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  "Zoom not supported on this device",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
 
-      // TAP RIPPLE
-      if (_tapPosition != null)
-        Positioned(
-          left: _tapPosition!.dx - 24,
-          top: _tapPosition!.dy - 24,
-          child: AnimatedBuilder(
-            animation: _tapRippleController,
-            builder: (context, child) {
-              return Opacity(
-                opacity: _tapRippleOpacity.value,
-                child: Transform.scale(
-                  scale: _tapRippleScale.value,
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: theme.colorScheme.primary,
-                        width: 2,
+        if (_tapPosition != null)
+          Positioned(
+            left: _tapPosition!.dx - 24,
+            top: _tapPosition!.dy - 24,
+            child: AnimatedBuilder(
+              animation: _tapRippleController,
+              builder: (context, child) {
+                return Opacity(
+                  opacity: _tapRippleOpacity.value,
+                  child: Transform.scale(
+                    scale: _tapRippleScale.value,
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.colorScheme.primary,
+                          width: 2,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
+          ),
+
+        IgnorePointer(
+          ignoring: true,
+          child: FadeTransition(
+            opacity: _flashOpacity,
+            child: Container(color: Colors.white),
           ),
         ),
 
-      // FLASH OVERLAY
-      IgnorePointer(
-        ignoring: true,
-        child: FadeTransition(
-          opacity: _flashOpacity,
-          child: Container(color: Colors.white),
-        ),
-      ),  
-
-      // TORCH BUTTON
-      Positioned(
-        top: 50,
-        right: 20,
-        child: IconButton(
-          icon: Icon(
-            _torchOn ? Icons.flashlight_on : Icons.flashlight_off,
-            color: theme.colorScheme.onSurface,
-            size: 28,
-          ),
-          onPressed: _toggleTorch,
-        ),
-      ),
-
-      // EXPOSURE SLIDER
-      if (_maxExposureOffset != _minExposureOffset)
         Positioned(
+          top: 50,
           right: 20,
-          bottom: 180,
-          top: 200,
-          child: RotatedBox(
-            quarterTurns: 3,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(
-                  enabledThumbRadius: 6,
-                ),
-              ),
-              child: Slider(
-                value: _exposureOffset.clamp(
-                  _minExposureOffset,
-                  _maxExposureOffset,
-                ),
-                min: _minExposureOffset,
-                max: _maxExposureOffset,
-                onChanged: (value) async {
-                  final controller = _controller;
-                  if (controller == null ||
-                      !controller.value.isInitialized) {
-                    return;
-                  }
+          child: IconButton(
+            icon: Icon(
+              _torchOn ? Icons.flashlight_on : Icons.flashlight_off,
+              color: theme.colorScheme.onSurface,
+              size: 28,
+            ),
+            onPressed: _toggleTorch,
+          ),
+        ),
 
-                  setState(() => _exposureOffset = value);
-                  try {
-                    await controller.setExposureOffset(value);
-                  } catch (_) {}
-                },
+        if (_maxExposureOffset != _minExposureOffset)
+          Positioned(
+            right: 20,
+            bottom: 180,
+            top: 200,
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                  ),
+                ),
+                child: Slider(
+                  value: _exposureOffset.clamp(
+                    _minExposureOffset,
+                    _maxExposureOffset,
+                  ),
+                  min: _minExposureOffset,
+                  max: _maxExposureOffset,
+                  onChanged: (value) async {
+                    final controller = _controller;
+                    if (controller == null ||
+                        !controller.value.isInitialized) {
+                      return;
+                    }
+
+                    setState(() => _exposureOffset = value);
+                    try {
+                      await controller.setExposureOffset(value);
+                    } catch (_) {}
+                  },
+                ),
               ),
             ),
           ),
-        ),
 
-      // GALLERY BUTTON
-      Positioned(
-        bottom: 40,
-        left: 20,
-        child: IconButton(
-          icon: Icon(
-            Icons.photo_library_outlined,
-            color: theme.colorScheme.onSurface,
-            size: 30,
+        Positioned(
+          bottom: 40,
+          left: 20,
+          child: IconButton(
+            icon: Icon(
+              Icons.photo_library_outlined,
+              color: theme.colorScheme.onSurface,
+              size: 30,
+            ),
+            onPressed: _pickFromGallery,
           ),
-          onPressed: _pickFromGallery,
         ),
-      ),
 
-      // SHUTTER BUTTON
-      Positioned(
-        bottom: 40,
-        left: 0,
-        right: 0,
-        child: Center(
-          child: ScaleTransition(
-            scale: _shutterScale,
-            child: GestureDetector(
-              onTap: _takePhoto,
-              child: Container(
-                width: 78,
-                height: 78,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: theme.colorScheme.onSurface,
-                    width: 6,
+        Positioned(
+          bottom: 40,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: ScaleTransition(
+              scale: _shutterScale,
+              child: GestureDetector(
+                onTap: _takePhoto,
+                child: Container(
+                  width: 78,
+                  height: 78,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: theme.colorScheme.onSurface,
+                      width: 6,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
   void _handleFocusTap(TapDownDetails details) async {
     final controller = _controller;
