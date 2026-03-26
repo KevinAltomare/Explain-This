@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../errors/app_error.dart';
 import '../errors/error_screen.dart';
 import 'image_review_screen.dart';
+import 'main_navigation.dart';
 
 class InAppCameraScreen extends StatefulWidget {
   const InAppCameraScreen({super.key});
@@ -22,7 +23,7 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   CameraController? _controller;
   bool _isInitialized = false;
 
-  bool _initializing = true; // 🔥 prevents double init on cold start
+  bool _initializing = true;
 
   double _currentZoom = 1.0;
   double _baseZoom = 1.0;
@@ -89,17 +90,9 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       curve: Curves.easeOut,
     );
 
-    // 🔥 Cold-start fix: delay camera init until after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      await _startCameraFlow();
-      _initializing = false; // 🔥 allow lifecycle resume AFTER first init
-    });
+    _startCameraFlow();
   }
 
-  // ------------------------------------------------------------
-  // LIFECYCLE — DISPOSE ON PAUSE, RESTART ON RESUME
-  // ------------------------------------------------------------
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
@@ -113,7 +106,7 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
     }
 
     if (state == AppLifecycleState.resumed) {
-      if (_initializing) return; // 🔥 prevent double init on cold start
+      if (_initializing) return;
       if (!_isRestartingCamera) {
         _restartCameraSafely();
       }
@@ -121,25 +114,31 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   }
 
   Future<void> _restartCameraSafely() async {
-    if (!mounted) return;
+  if (!mounted) return;
 
-    setState(() => _isRestartingCamera = true);
+  setState(() {
+    _isRestartingCamera = true;
+    _isInitialized = false;
+  });
 
-    try {
-      await _controller?.dispose();
-      _controller = null;
-      _isInitialized = false;
+  try {
+    final old = _controller;
+    _controller = null;
+    
+    if (old != null) {
+      await old.dispose();
+    }
 
-      await Future.delayed(const Duration(milliseconds: 150));
-      await _startCameraFlow();
-    } finally {
-      if (mounted) {
-        setState(() => _isRestartingCamera = false);
-      }
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    await _startCameraFlow();
+
+  } finally {
+    if (mounted) {
+      setState(() => _isRestartingCamera = false);
     }
   }
-
-  // ------------------------------------------------------------
+}
 
   Future<void> _pickFromGallery() async {
     try {
@@ -204,11 +203,17 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       await _initializeCamera();
 
       if (!mounted) return;
-      setState(() => _isInitialized = true);
+      setState(() {
+        _isInitialized = true;
+        _initializing = false;
+    });
     } catch (e) {
       if (!mounted) return;
 
-      setState(() => _isInitialized = false);
+      setState(() {
+        _isInitialized = false;
+        _initializing = false;
+    });
 
       Navigator.push(
         context,
@@ -220,7 +225,10 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
                     AppErrorType.unexpected,
                     "Something unexpected happened.\nPlease try again.",
                   ),
-            onRetry: _startCameraFlow,
+            onRetry: () {
+              Navigator.of(mainNavKey.currentContext!).pop(true);
+              _restartCameraSafely();
+            },
           ),
         ),
       );
@@ -247,10 +255,6 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       final backCamera = cameras.firstWhere(
         (cam) => cam.lensDirection == CameraLensDirection.back,
       );
-
-      await _controller?.dispose();
-      _controller = null;
-      _isInitialized = false;
 
       final controller = CameraController(
         backCamera,
@@ -401,7 +405,7 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
         if (_isRestartingCamera)
           Positioned.fill(
             child: Container(
-              color: Colors.black.withValues(alpha:0.6),
+              color: Colors.black.withValues(alpha: 0.6),
               child: const Center(
                 child: SizedBox(
                   width: 32,
@@ -426,7 +430,7 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha:0.6),
+                  color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
@@ -592,44 +596,52 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   }
 
   Future<void> _takePhoto() async {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
+  final controller = _controller;
+  if (controller == null || !controller.value.isInitialized) return;
+
+  try {
+    _shutterScaleController.reverse(from: 1.0);
+    _shutterScaleController.forward();
+
+    _flashController.forward(from: 0.0);
+    await Future.delayed(const Duration(milliseconds: 80));
+    _flashController.reverse();
 
     try {
-      _shutterScaleController.reverse(from: 1.0);
-      _shutterScaleController.forward();
+      await controller.setFocusMode(FocusMode.auto);
+    } catch (_) {}
 
-      _flashController.forward(from: 0.0);
-      await Future.delayed(const Duration(milliseconds: 80));
-      _flashController.reverse();
+    final file = await controller.takePicture();
+    if (!mounted) return;
 
-      try {
-        await controller.setFocusMode(FocusMode.auto);
-      } catch (_) {}
+    // IMPORTANT: Push ImageReviewScreen on the MAIN navigator
+    final result = await mainNavKey.currentState!.push(
+      MaterialPageRoute(
+        builder: (_) => ImageReviewScreen(imagePath: file.path),
+      ),
+    );
 
-      final file = await controller.takePicture();
-      if (!mounted) return;
-
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ImageReviewScreen(imagePath: file.path),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ErrorScreen(
-            error: AppError(
-              AppErrorType.cameraFailure,
-              "Something went wrong while capturing the image.\nPlease try again.",
-            ),
-            onRetry: _takePhoto,
-          ),
-        ),
-      );
+    // If ExplanationScreen popped with "true", restart the camera
+    if (result == true) {
+      _restartCameraSafely();
     }
+  } catch (_) {
+    if (!mounted) return;
+
+    mainNavKey.currentState!.push(
+      MaterialPageRoute(
+        builder: (_) => ErrorScreen(
+          error: AppError(
+            AppErrorType.cameraFailure,
+            "Something went wrong while capturing the image.\nPlease try again.",
+          ),
+          onRetry: () {
+            mainNavKey.currentState!.pop();
+            _restartCameraSafely();
+          },
+        ),
+      ),
+    );
   }
+ }
 }

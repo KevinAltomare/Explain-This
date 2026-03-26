@@ -124,12 +124,27 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
 
               const SizedBox(height: 80), // space above bottom button
+
+              TextButton(
+                onPressed: () async {
+                  await InAppPurchase.instance.restorePurchases();
+  },
+                child: Text(
+                  "Restore Purchases",
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+
+
             ],
           ),
         ),
       ),
 
-      // ⭐ Fixed bottom button
+      
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16),
         child: TextButton(

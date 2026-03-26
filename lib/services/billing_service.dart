@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,10 +21,15 @@ class BillingService {
     final available = await _iap.isAvailable();
     if (!available) return;
 
+    // Listen for purchase updates
     _subscription = _iap.purchaseStream.listen(_handlePurchaseUpdates);
 
+    // Load product details
     final response = await _iap.queryProductDetails(_productIds);
     products = response.productDetails;
+
+    // 🔥 CRITICAL: Restore purchases on startup
+    await _iap.restorePurchases();
   }
 
   void buy(ProductDetails product) {
@@ -35,8 +41,14 @@ class BillingService {
     for (final purchase in updates) {
       if (purchase.status == PurchaseStatus.purchased ||
           purchase.status == PurchaseStatus.restored) {
+
+        // Unlock premium
         await _unlockPremium();
-        await _iap.completePurchase(purchase);
+
+        // Complete the purchase if needed
+        if (purchase.pendingCompletePurchase) {
+          await _iap.completePurchase(purchase);
+        }
       }
     }
   }
@@ -47,10 +59,10 @@ class BillingService {
   }
 
   Future<bool> isPremium() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getBool('isPremium') ?? false;
+    if (kDebugMode) return true; // Always premium in debug
 
-    return value;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('isPremium') ?? false;
   }
 
   void dispose() {

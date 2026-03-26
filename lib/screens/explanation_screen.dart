@@ -133,8 +133,7 @@ class _ExplanationScreenState extends State<ExplanationScreen> {
             error: e,
             onRetry: () {
               Navigator.of(context).pop();
-              Navigator.of(context).pop();
-              Navigator.of(context).pop();
+              Navigator.of(context).pop(true); // Go back to Camera and trigger retake
             },
           ),
         ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'explanation_screen.dart';
-import 'main_navigation.dart'; // <-- import the global mainNavKey
+import 'main_navigation.dart'; // mainNavKey
 
 class ImageReviewScreen extends StatelessWidget {
   final String imagePath;
@@ -56,18 +56,21 @@ class ImageReviewScreen extends StatelessWidget {
 
                 Expanded(
                   child: FilledButton(
-                    onPressed: () {
-                      // IMPORTANT FIX:
+                    onPressed: () async {
                       // Remove ImageReviewScreen from the Scan tab navigator
                       Navigator.of(context).pop();
 
-                      // Then push ExplanationScreen on the main navigator
-                      mainNavKey.currentState!.push(
+                      // Push ExplanationScreen on the main navigator and wait for result
+                      final result = await mainNavKey.currentState!.push(
                         MaterialPageRoute(
-                          builder: (_) =>
-                              ExplanationScreen(imagePath: imagePath),
+                          builder: (_) => ExplanationScreen(imagePath: imagePath),
                         ),
                       );
+
+                      if (!context.mounted) return;
+
+                      // Forward the result back to InAppCameraScreen
+                      Navigator.of(context).pop(result);
                     },
                     child: const Text(
                       'Use this photo',
