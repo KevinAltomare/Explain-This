@@ -23,22 +23,47 @@ class _PaywallScreenState extends State<PaywallScreen> {
     await BillingService.instance.init();
     products = BillingService.instance.products;
 
+    // Sort: monthly/yearly first, lifetime last
     products.sort((a, b) {
-    int rank(ProductDetails p) {
-      final id = p.id.toLowerCase();
+      int rank(ProductDetails p) {
+        final id = p.id.toLowerCase();
 
-      if (id == "premium") return 0;
-      if (id == "premium_lifetime") return 2;
+        if (id.contains("lifetime")) return 2;
+        if (id.contains("year")) return 1;
+        if (id.contains("month")) return 0;
 
-      return 1; // fallback for anything else
-    }
+        return 3;
+      }
 
-    return rank(a).compareTo(rank(b));
-  });
+      return rank(a).compareTo(rank(b));
+    });
 
     if (mounted) {
       setState(() => loading = false);
     }
+  }
+
+  // ⭐ Label each product cleanly
+  String _labelForProduct(ProductDetails product) {
+    final id = product.id.toLowerCase();
+
+    if (id.contains("lifetime")) return "Lifetime (One‑Time Purchase)";
+    if (id.contains("year")) return "Yearly Subscription";
+    if (id.contains("month")) return "Monthly Subscription";
+
+    return "Premium";
+  }
+
+  // ⭐ Optional: cleaner subtitles
+  String _subtitleForProduct(ProductDetails product) {
+    final id = product.id.toLowerCase();
+
+    if (id.contains("lifetime")) {
+      return "Pay once, unlock everything forever";
+    }
+
+    // Use Google Play description for subscriptions
+    return product.description;
   }
 
   @override
@@ -80,7 +105,6 @@ class _PaywallScreenState extends State<PaywallScreen> {
         elevation: 0,
       ),
 
-      // ⭐ Scrollable content
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -110,25 +134,26 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
               const SizedBox(height: 32),
 
+              // ⭐ Updated product cards
               for (final product in products)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: _buildOption(
                     context,
                     theme,
-                    title: product.title,
+                    title: _labelForProduct(product),
                     price: product.price,
-                    subtitle: product.description,
+                    subtitle: _subtitleForProduct(product),
                     onTap: () => _purchase(product),
                   ),
                 ),
 
-              const SizedBox(height: 80), // space above bottom button
+              const SizedBox(height: 80),
 
               TextButton(
                 onPressed: () async {
                   await InAppPurchase.instance.restorePurchases();
-  },
+                },
                 child: Text(
                   "Restore Purchases",
                   style: TextStyle(
@@ -137,14 +162,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   ),
                 ),
               ),
-
-
             ],
           ),
         ),
       ),
 
-      
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16),
         child: TextButton(
